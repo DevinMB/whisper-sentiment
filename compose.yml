@@ -1,0 +1,59 @@
+version: '3.8'
+
+services:
+  whisper-sentiment:
+    image: alpine:latest
+    container_name: ${APP_NAME}
+    labels:
+      - "promtail.scrape=true"
+    restart: always
+
+    volumes:
+      - whisper_enrichment_code:/app
+
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=${KAFKA_BOOTSTRAP_SERVERS}
+      - KAFKA_GROUP_ID=${KAFKA_GROUP_ID}
+      - KAFKA_INPUT_TOPIC=${KAFKA_INPUT_TOPIC}
+      - KAFKA_OUTPUT_TOPIC=${KAFKA_OUTPUT_TOPIC}
+      - AUTO_OFFSET_RESET=${AUTO_OFFSET_RESET}
+      - OLLAMA_ENABLED=${OLLAMA_ENABLED}
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL}
+      - OLLAMA_MODEL=${OLLAMA_MODEL}
+      - APP_NAME=${APP_NAME}
+      - LOG_LEVEL=${LOG_LEVEL}
+      - RELEASE_VERSION=${RELEASE_VERSION}
+      
+    networks:
+      - default
+
+    entrypoint: |
+      /bin/sh -c "
+      # 1. Install Python 3 & basic tools
+      apk add --no-cache python3 py3-pip tar curl;
+
+      # 2. Download code if it does not exist locally
+      if [ ! -d /app/whisper-sentiment-v${RELEASE_VERSION} ]; then
+        mkdir -p /app/whisper-sentiment-v${RELEASE_VERSION} && \
+        curl -L https://github.com/DevinMB/whisper-sentiment/archive/refs/tags/v${RELEASE_VERSION}.tar.gz | tar xz --strip-components=1 -C /app/whisper-sentiment-v${RELEASE_VERSION};
+      fi
+
+      # 3. Install Python dependencies
+      if [ -f /app/whisper-sentiment-v${RELEASE_VERSION}/requirements.txt ]; then
+        pip3 install -r /app/whisper-sentiment-v${RELEASE_VERSION}/requirements.txt --break-system-packages;
+      else
+        echo 'No requirements.txt found, skipping installation';
+      fi
+
+      # 4. Run Python script
+      python3 /app/whisper-sentiment-v${RELEASE_VERSION}/whisper_sentiment_enricher.py;
+
+      # 5. Keep container running
+      tail -f /dev/null
+      "
+networks:
+  default:
+    driver: bridge
+
+volumes:
+  whisper_enrichment_code:
